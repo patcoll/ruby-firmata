@@ -5,4 +5,4 @@ require "rubygems"
 require "arduino"
 
 arduino = Arduino.new(Dir["/dev/tty.usbserial*"][0], 57600)
-arduino.run(Fade)
+arduino.run(Button)

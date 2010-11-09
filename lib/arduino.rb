@@ -25,6 +25,8 @@ class Arduino
   START_SYSEX = 0xF0 # start a MIDI SysEx message
   END_SYSEX = 0xF7 # end a MIDI SysEx message
   
+  attr_reader :digital_input_data
+  
   def initialize(device, baud=57600)
     @device = device
     @baud = baud
@@ -109,7 +111,60 @@ class Arduino
     sleep(seconds)
   end
   
+  def parse
+    data = @serial_port.read(1)
+    p data
+    process(data) unless data == "" or data == "\000"
+  end
+  
   private
+  
+  def process(input_data)
+    # p input_data
+    # p input_data.unpack('c')[0]
+    input_data = input_data.unpack('c')[0]
+    # p "A".unpack('c')[0]
+    # p input_data
+    # Handling input data
+    command = nil
+    
+    if @parsing_sysex
+      if input_data == END_SYSEX
+        @parsing_sysex = false
+      else
+        @stored_input_data[@sysex_bytes_read] = input_data
+        @sysex_bytes_read += 1
+      end
+
+    elsif @wait_for_data > 0 and input_data < 128
+      @wait_for_data -= 1
+      @stored_input_data[@wait_for_data] = input_data
+
+      if @exec_multibyte_cmd != 0 and @wait_for_data == 0
+        if @exec_multibyte_cmd ==  DIGITAL_MESSAGE
+          @digital_input_data[@multibyte_channel] = (@stored_input_data[0] << 7) + @stored_input_data[1]
+        elsif @exec_multibyte_cmd ==  ANALOG_MESSAGE
+          @analog_input_data[@multibyte_channel] = (@stored_input_data[0] << 7) + @stored_input_data[1]
+        elsif @exec_multibyte_cmd ==  REPORT_VERSION
+          set_version(@stored_input_data[1], @stored_input_data[0])
+        end
+      end
+
+    else
+      if input_data < 0xF0
+        command = input_data & 0xF0
+        @multibyte_channel = input_data & 0x0F
+      else
+        command = input_data # commands in the 0xF* range don't use channel data
+      end
+
+      if command == DIGITAL_MESSAGE or command == ANALOG_MESSAGE or command == REPORT_VERSION
+        @wait_for_data = 2
+        @exec_multibyte_cmd = command
+      end
+
+    end
+  end
   
   def write(value)
     @serial_port.write(value.to_i.chr)
